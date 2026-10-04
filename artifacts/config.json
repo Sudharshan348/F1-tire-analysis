@@ -1,0 +1,64 @@
+{
+  "FUEL_EFFECT_K": 0.055,
+  "FUEL_PER_LAP": 1.9298245614035088,
+  "RACE_LAPS": 57,
+  "DELTA_PER_LAP": 0.10614035087719298,
+  "residual_std": 0.6621353164032338,
+  "MEAN_TRACK_TEMP": 29.65904255319149,
+  "MEAN_AIR_TEMP": 26.63882978723404,
+  "best_xgb_params": {
+    "n_estimators": 196,
+    "max_depth": 3,
+    "learning_rate": 0.01103619531561932,
+    "subsample": 0.5157224122970906,
+    "colsample_bytree": 0.6409056272594656,
+    "reg_alpha": 1.5908700977716513e-08,
+    "reg_lambda": 3.5109275047490714e-06
+  },
+  "best_rf_params": {
+    "n_estimators": 224,
+    "max_depth": 5,
+    "min_samples_leaf": 2,
+    "min_samples_split": 7,
+    "max_features": 0.3735108000896695
+  },
+  "gp_kernel": "1.24**2 * Matern(length_scale=[1.09, 1.44, 1e+03, 3.71, 1e+03, 1e+03, 0.42], nu=2.5) + WhiteKernel(noise_level=0.171)",
+  "features": [
+    "TyreLife",
+    "TyreAgeSq",
+    "TyreAgeCubed",
+    "CompoundEncoded",
+    "TrackTemp",
+    "AirTemp",
+    "LapNumber"
+  ],
+  "optimal_degree": 2,
+  "n_train": 452,
+  "n_test": 112,
+  "n_laps_modeled": 564,
+  "n_drivers": 19,
+  "n_stints": 52,
+  "compound_counts": {
+    "HARD": 361,
+    "SOFT": 195,
+    "MEDIUM": 8
+  },
+  "MC": {
+    "CURRENT_LAP": 30,
+    "RACE_TOTAL_LAPS": 57,
+    "PIT_STOP_DELTA": 22.0,
+    "SAFETY_CAR_PROBABILITY": 0.15,
+    "N_SIMULATIONS": 10000,
+    "PIT_STRATEGIES": [
+      12,
+      15,
+      18,
+      21
+    ],
+    "RIVAL_GAP_SECONDS": 2.1,
+    "RIVAL_TYRE_AGE": 18,
+    "OUR_COMPOUND_BEFORE": 1,
+    "OUR_COMPOUND_AFTER": 2,
+    "OUR_TYRE_AGE_START": 15
+  }
+}
