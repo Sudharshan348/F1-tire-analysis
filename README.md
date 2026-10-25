@@ -18,16 +18,23 @@ several times per race:
 We take raw F1 timing and telemetry (FastF1, Bahrain GP 2023), remove every confound that
 is **not** tire wear (fuel load, safety cars, pit laps, traffic), and train **five**
 regression models to predict the pure lap-time penalty caused by tire aging. We then feed
-those predictions into a **Monte Carlo race simulator (10,000 races per strategy)** that
-prices in pit-stop loss, rival behavior, and safety-car risk. The output is a probabilistic
-optimal pit window (lap 42 of 57 in our case) with a win probability, an uncertainty band,
-and a live what-if dashboard.
+those predictions into a **Monte Carlo race simulator** that prices in pit-stop loss, rival
+behavior, and safety-car risk. The baseline strategy study samples four pit laps
+(`{42, 45, 48, 51}`); the final layer replaces that hand-designed grid with a full-window
+**Differential Evolution** optimizer over laps 31–56. It raises the dual-engine win
+probability from **78.0%** at the grid's best lap to **99.99%** at **lap 34**, and adds
+**+5.1 s** (XGBoost) / **+18.7 s** (GP) of median final margin. The output is a
+probabilistic optimal pit lap, an uncertainty band, a convergence/landscape proof, and a
+live what-if dashboard.
 
 The novel parts are: (a) physics-based fuel correction, (b) a **custom asymmetric loss
 function** that punishes the specific mistakes that cost races (optimistic tire
-predictions), (c) **strategy-aware evaluation metrics** instead of plain RMSE, and
+predictions), (c) **strategy-aware evaluation metrics** instead of plain RMSE,
 (d) a **dual-engine uncertainty study** comparing fixed-noise vs Gaussian-Process
-per-lap uncertainty in the race simulation.
+per-lap uncertainty in the race simulation, and (e) **full-window stochastic strategy
+optimization** with Differential Evolution, common random numbers, and independent-seed
+validation. **Section 20 gives the short before/after summary of exactly what was added in
+the final version.**
 
 ---
 
@@ -60,11 +67,15 @@ Given:
   - Tire degradation model: delta(age, compound, temperature)
 
 Choose:
-  pit lap p ∈ {42, 45, 48, 51}
+  baseline grid:  p ∈ {42, 45, 48, 51}
+  final optimizer: p ∈ {31, 32, ..., 56}
 
 Maximize:
-  P( final_gap_to_rival > 0 )   [win probability]
+  J(p) = 1/2 [ P_XGB(win | p) + P_GP(win | p) ]   [dual-engine win probability]
 ```
+
+The four-point grid is kept as the comparison baseline. The final recommendation comes
+from the full-window Differential Evolution search in Section 8.6.
 
 ---
 
@@ -136,14 +147,21 @@ FastF1 merges official timing loops with telemetry, giving per-lap: lap time, co
                                      ▼
  ┌──────────────────────────────────────────────────────────────────────────────┐
  │         MONTE CARLO RACE SIMULATOR   (XGBoost engine + GP engine)            │
- │   10,000 races × 4 pit strategies × 2 engines = 80,000 simulated races       │
+ │   10,000 races × 4 baseline pit strategies × 2 engines = 80,000 races        │
  │   + pit loss 22 s + rival model + safety-car hazard (15% per 10-lap block)   │
  └───────────────────────────────────┬──────────────────────────────────────────┘
                                      │
                                      ▼
  ┌──────────────────────────────────────────────────────────────────────────────┐
+ │        FULL-WINDOW STRATEGY OPTIMIZATION  (Differential Evolution)           │
+ │   p ∈ {31..56} · dual-engine objective · common random numbers · 3 seeds     │
+ │   50,000 races per candidate · benchmarked vs Newton and golden-section      │
+ └───────────────────────────────────┬──────────────────────────────────────────┘
+                                     │
+                                     ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
  │     DECISION OUTPUT + VALIDATION + INTERACTIVE DASHBOARD (Streamlit)         │
- │   Optimal pit lap 42 · win% · P10–P90 gap bands · reality-check vs real pits │
+ │   Optimal pit lap 34 · win% · P10–P90 gap bands · reality-check vs real pits │
  └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -467,7 +485,7 @@ project's core insight.
 
 ## 8. Optimization — Everything Being Optimized, and How
 
-There are **five distinct optimization problems** in the project. It is worth being
+There are **six distinct optimization problems** in the project. It is worth being
 precise about each, because they operate at different levels.
 
 ### 8.1 Level 1 — Hyperparameter optimization (model capacity)
@@ -510,9 +528,9 @@ boosting procedure spends its capacity reducing optimistic errors. This is
 decision into the training objective. Small change in code, fundamental change in what
 "best model" means.
 
-### 8.5 Level 5 — Strategy optimization (the actual race decision)
+### 8.5 Level 5 — Baseline strategy grid (the original race decision)
 
-This is the top-level optimization the whole project exists to serve:
+The original top-level optimization was:
 
 ```
 maximize    P( win | p )                     [over pit lap p]
@@ -521,13 +539,123 @@ subject to  p ∈ {42, 45, 48, 51}
 ```
 
 `P(win | p)` cannot be computed in closed form (the degradation curve is non-linear,
-noise is stochastic, safety cars are discrete random events), so we **estimate it by
-Monte Carlo**: 10,000 independent race simulations per candidate p, then compare the
+noise is stochastic, safety cars are discrete random events), so we estimate it by
+Monte Carlo: 10,000 independent race simulations per candidate p, then compare the
 empirical win rates. This is **simulation-based optimization / sample average
-approximation**. The grid {42,45,48,51} spans the realistic window around the rival's
-planned lap-45 stop.
+approximation**.
 
-### 8.6 Bonus — Computational optimization
+The grid is a useful baseline, but it is a hand-designed sample of only **4 of the 26
+feasible pit laps**. Its best point, lap 42, is therefore not the true optimum. The final
+layer in Section 8.6 removes that limitation.
+
+### 8.6 Level 6 — Full-window pit-lap optimization (Differential Evolution)
+
+This is the final optimization layer and the answer to the faculty's "actual optimization
+algorithm" requirement. Instead of comparing four hand-picked laps, we solve
+
+```
+maximize    J(p) = 1/2 [ P_XGB(win | p) + P_GP(win | p) ] + 1e-6 * mean_median_gap(p)
+subject to  p ∈ {31, 32, ..., 56}          (integer pit lap, current lap 30)
+            one-stop strategy, rival pits lap 45, 22 s pit loss, 15% SC hazard
+```
+
+The tiny second term only breaks ties inside the win-probability plateau. The primary
+objective is the **average win probability across the fixed-noise XGBoost engine and the
+heteroscedastic Gaussian Process engine**. This is a deliberately model-robust objective:
+the project's two simulation engines disagree about confidence, so optimizing one alone
+would bake that engine's assumptions into the recommendation.
+
+#### Why Differential Evolution?
+
+`J(p)` is a **black-box, integer-valued, non-smooth, noisy, and potentially multi-modal**
+function:
+
+- the empirical win rate is a step function of `p`;
+- pit lap is an integer, not a continuous variable;
+- each evaluation is a Monte Carlo estimate;
+- under the GP engine there is a second local maximum near lap 54, so the landscape is not
+  guaranteed unimodal.
+
+| Method | Derivative needed | Handles integer `p` | Global | Handles noisy black-box `J` | Verdict |
+|---|---|---|---|---|---|
+| Newton–Raphson | Yes (1st/2nd) | No | No | No | Not suitable |
+| Golden-section | No | No (continuous relaxation) | No (unimodal only) | Weak | Benchmark only |
+| **Differential Evolution** | No | **Yes** (`integrality=True`) | **Yes** | **Yes** | **Selected** |
+
+DE is a population-based evolutionary algorithm from the genetic/GA family. SciPy's
+`differential_evolution` supports bounds, integer variables, a deterministic seed, and a
+callback, which is exactly what this problem needs.
+
+#### Removing Monte Carlo noise: common random numbers
+
+Every candidate pit lap is evaluated on the **same** safety-car draws and the same
+standard-normal lap-noise draws. This is a sample-average approximation with **common
+random numbers (CRN)**. Without CRN, a lucky seed can make a worse pit lap look better;
+with CRN, the ranking reflects the strategy. Independent seeds are used only for final
+validation, so the optimizer cannot overfit the shared sample.
+
+The optimizer uses the same vectorized state simulator as the dashboard's live what-if
+(Section 11), extended to both engines, so both engines share the safety-car and noise
+draws. The baseline grid tables in Section 9 use the notebook's original per-race loop;
+the small numerical differences between the two are Monte Carlo sampling, not a modelling
+change.
+
+The implementation is `optimizer.py`; the notebook calls it at the end of the pipeline and
+the dashboard reads its exported artifacts.
+
+#### Benchmark — all three candidate algorithms
+
+| Method | Search range | Best lap | XGB win | GP win | Ensemble win | Evaluations | Verdict |
+|---|---|---|---|---|---|---|---|
+| Grid search (baseline) | 42–51 (4 points) | 42 | 99.64% | 56.35% | 78.00% | 4 | Misses the full-window peak |
+| Golden-section (full window) | 31–56 | 34 | 99.99% | 99.98% | 99.99% | 9 | Finds the peak here, but cannot certify it |
+| Golden-section (old grid bracket) | 42–51 | 42 | 99.64% | 56.35% | 78.00% | 7 | Trapped at the bracket edge |
+| Newton–Raphson (quadratic surrogate) | local, from lap 42 | 55 | 0.04% | 59.07% | 29.56% | 31 | Start-dependent; roots ranged 5–148 |
+| **Differential Evolution** | **31–56** | **34** | **99.99%** | **99.98%** | **99.99%** | **19** | **Selected** |
+
+The Newton row is especially instructive: started from the old grid's lap 42, it lands on
+lap 55 and collapses. The roots from different starts ranged from 5 to 148, i.e. outside
+the race. Golden-section only matches DE when it is given the full bracket; seeded with the
+old grid window it returns the bracket edge, which is exactly the grid bias we are trying
+to remove.
+
+*Evaluation counts are not directly comparable across methods: DE and golden-section
+consume full Monte Carlo evaluations, while Newton consumes local quadratic-surrogate
+points. The verdict column, not the raw count, is the comparison.*
+
+#### Independent validation (5 fresh seeds × 20,000 races)
+
+| Scenario | Pit lap | XGB win | GP win | Ensemble win | XGB median gap | GP median gap |
+|---|---|---|---|---|---|---|
+| Grid best (baseline) | 42 | 99.59% | 56.50% | 78.05% | +12.94 s | +1.07 s |
+| **DE optimum** | **34** | **99.99%** | **99.97%** | **99.98%** | **+18.00 s** | **+19.73 s** |
+| XGB-only optimum | 36 | 99.99% | 99.42% | 99.71% | +18.93 s | +14.57 s |
+| GP-only optimum | 33 | 99.97% | 99.98% | 99.98% | +16.92 s | +20.37 s |
+
+The gain from the baseline is **+21.99 percentage points** of ensemble win probability,
+**+5.06 s** of XGB median margin, and **+18.66 s** of GP median margin. DE reaches the
+answer in **19 unique pit-lap evaluations**, **3 generations**, and under **1.3 s** with
+50,000 races per candidate; all three DE seeds (42, 7, 2026) return lap 34.
+
+Because the paired validation uses common random numbers, the XGB median-gap gain is
+deterministic (the fixed residual noise cancels between the two strategies); the GP gain
+varies across seeds because its per-lap σ depends on the tire state. The win-probability
+comparison still varies across seeds and is reported with 95% confidence intervals.
+
+The three objective variants — XGB-only (lap 36), GP-only (lap 33), and dual-engine (lap
+34) — all select the same **33–36 early-stop neighborhood**. The recommendation is not a
+single-engine artifact, a boundary artifact (lap 34 is interior to 31–56), or Monte Carlo
+noise (the gain survives independent seeds).
+
+#### Why this matters
+
+For a one-dimensional problem, an exhaustive 26-point scan is also cheap. The value of DE
+is that it treats `J` as a black box, handles integer/non-smooth/noisy functions, and
+extends naturally to multi-stop or compound-choice decisions where exhaustive search
+explodes. The proof is not "DE is faster than a 26-point scan"; it is "DE finds the true
+full-window optimum without assuming differentiability, unimodality, or a lucky seed."
+
+### 8.7 Bonus — Computational optimization
 
 Naïvely, the GP simulation needs a GP query for every lap of every simulation:
 10,000 × 27 laps × 4 strategies × 2 cars ≈ 2.16 million GP queries (~hours). Because
@@ -598,6 +726,12 @@ the cliff, σ grows. The simulation then draws `N(0, σ(x_lap))` per lap.
 | 48 | 50.6% | +0.10 s | −9.43 | +9.69 |
 | 51 | 57.7% | +1.59 s | −8.50 | +11.32 |
 
+> **These four-lap tables are the baseline grid.** The full-window Differential Evolution
+> optimizer in Section 8.6 searches every feasible lap 31–56 and finds the dual-engine
+> optimum at **lap 34**: 99.99% XGB win, 99.98% GP win, and median margins of +18.0 s /
+> +19.7 s. The grid's lap 42 is dominated. The baseline tables are retained because they
+> expose exactly why the grid was insufficient.
+
 ### 9.4 Interpreting the two engines (the intellectually interesting bit)
 
 The engines **agree on structure but disagree on confidence**:
@@ -626,6 +760,10 @@ The engines **agree on structure but disagree on confidence**:
   bad), but risk is correctly priced. **The GP engine is the "expected-loss" view; the
   XGB engine is the "point-estimate" view.** Reporting both is more honest than
   reporting either alone.
+- The full-window optimizer confirms the direction and sharpens it: XGB-only prefers
+  lap 36, GP-only prefers lap 33, and the dual-engine objective prefers lap 34. All are
+  in the same early-stop neighborhood; the old grid's earliest point, lap 42, is 6–9
+  laps too late.
 
 Both engines are exposed side-by-side in the dashboard, plus a live what-if simulator
 where the user moves the pit lap, current tire age, and rival gap sliders and re-runs
@@ -660,9 +798,11 @@ would be useless; 0.58 s means pit-window calls are credible.
 
 ### 10.2 Recommendations match real pit decisions
 Real teams made 11 final-window pit stops between laps **35 and 50** (median lap 41).
-Our model's recommended aggressive undercut (lap 42) sits **inside the real pit
-window**, bracketed by actual team calls. The recommendation is data-consistent, not
-an outlier:
+The original grid recommended lap 42, which sits inside that window. The full-window
+optimizer pushes the recommendation to **lap 34** — one lap before the earliest real stop
+and seven laps before the grid's choice. That is a deliberately aggressive undercut, but
+it is data-consistent: the real strategy envelope starts at lap 35, and the optimizer is
+responding to a specific rival pitting on lap 45, not to the field average.
 
 ```
  # real stops
@@ -672,14 +812,16 @@ an outlier:
  1 │    █  █  █  █  █     █
  0 └──────────────────────────────► race lap
       35 37 39 41 43 45 47 50
-                  ▲ model says lap 42 (aggressive undercut)
+      ▲ optimizer: lap 34 (aggressive edge)
+                  ▲ old grid: lap 42
                   ▲ rival model pit: lap 45
 ```
 
 ### 10.3 Optimization provenance
 Every design choice is evidence-backed, not eyeballed: polynomial degree by AIC/BIC/CV,
-XGBoost by 100-trial Optuna, RF by 30-trial Optuna, GP kernel by marginal likelihood,
-and the final pit lap by Monte Carlo win probability.
+XGBoost by 100-trial Optuna, RF by 30-trial Optuna, GP kernel by marginal likelihood, the
+baseline pit grid by Monte Carlo, and the final pit lap by **full-window Differential
+Evolution** with common random numbers and independent-seed validation (`optimizer.py`).
 
 ---
 
@@ -695,10 +837,13 @@ retrains — the notebook is the single source of truth.
 | **Data & Method** | Fuel-correction equations, cleaning funnel, leakage-safe split, compound mix |
 | **EDA** | LOWESS degradation curves, clean vs dirty air boxplot, temperature × age heatmap |
 | **Models** | The 5-model metric table + RMSE/SIS bars + degree selection + PER stint trace with GP ±1σ |
-| **Monte Carlo** | Win% by strategy per engine, gap distributions, **live what-if simulator** |
-| **Proof & Inference** | GP kernel/params, cumulative drift chart, real pit-stop comparison, uncertainty σ |
+| **Monte Carlo** | Baseline 4-point grid: win% by strategy per engine, gap distributions, **live what-if simulator** |
+| **Optimizer** | Problem formulation, Newton/golden/DE benchmark, DE convergence, full-window landscape, independent validation, and "how the algorithm helps" |
+| **Proof & Inference** | GP kernel/params, cumulative drift chart, real pit-stop comparison, uncertainty σ, final optimization proof |
 
-The app demonstrates the whole story in six clicks — ideal for a live demo/viva.
+The app demonstrates the whole story in seven clicks — ideal for a live demo/viva. The
+Optimizer tab is the direct evidence for the faculty requirement: it shows the old grid's
+failure, the chosen algorithm's convergence, and the validated gain.
 
 ---
 
@@ -732,13 +877,21 @@ The app demonstrates the whole story in six clicks — ideal for a live demo/viv
    pit-wall dashboard with a live 10,000-race what-if simulator (vectorized GP
    evaluation).
 
+7. **Full-window stochastic strategy optimization.** The original 4-point grid is
+   replaced by Differential Evolution over every feasible pit lap, with a dual-engine
+   objective, common random numbers, and independent-seed validation. The optimizer
+   finds an interior optimum (lap 34) that the grid could not see, improves the
+   model-averaged win probability by ~22 percentage points, and is benchmarked against
+   Newton–Raphson and golden-section so the algorithm choice itself is evidence-backed.
+
 ---
 
 ## 13. How Is This Useful? (real-world value)
 
 - **Race strategy:** with live lap data mid-race, this pipeline can re-run the
   simulation every few laps and output "pit now / pit in n laps" with a win
-  probability. Direct pit-wall decision support.
+  probability. The full-window optimizer makes that recommendation a true search
+  result rather than a four-point grid pick. Direct pit-wall decision support.
 - **Undercut/overcut planning:** quantifies the trade-off between track position and
   tire life probabilistically, including safety-car risk.
 - **Risk communication:** P10/median/P90 gap bands let strategists distinguish "we
@@ -768,13 +921,19 @@ The app demonstrates the whole story in six clicks — ideal for a live demo/viv
   for both cars); real SCs interact with pit timing strategically.
 - **GP is O(n³)** (25.7 s train, 2.16M queries avoided via vectorization) — scaling to
   a full season would need sparse/inducing-point GPs or deep kernels.
-- **Discretized strategy grid** {42,45,48,51}: the true optimum between grid points is
-  not evaluated.
+- **The optimization is one-dimensional:** the full-window DE removes the old grid
+  limitation, but the decision is still "which lap for a single stop" with a fixed rival
+  plan. Two-stop strategies, compound choice, and a reacting rival are higher-dimensional
+  extensions (where DE's advantage over exhaustive search becomes larger).
+- **The optimizer uses 50,000 races per candidate** to keep the dual-engine objective
+  stable. That is cheap here because the state sequences are vectorized, but a live
+  in-race version would need a smaller simulation budget or a warm-started surrogate.
 
 ## 15. Future Work
 
 - Sequential decision-making: re-plan every lap with updating data (MDP / dynamic
   programming).
+- Multi-stop and compound-choice optimization with a higher-dimensional DE.
 - Game-theoretic rival model (both teams using our simulator).
 - Season-wide multi-circuit model with circuit embeddings.
 - Deep GP / Bayesian neural nets for better-calibrated σ.
@@ -802,9 +961,28 @@ competitive. More importantly, the *decision-relevant* metrics (SIS, drift) show
 errors don't accumulate into wrong strategies: 0.58 s drift over a 20-lap stint.
 
 **Q: What exactly is being optimized?**
-A: Five levels: hyperparameters (Optuna/CV), polynomial degree (AIC/BIC/CV), GP kernel
-(marginal likelihood), training loss (asymmetric cost-sensitive objective), and the
-race decision itself (maximize win probability over pit laps via Monte Carlo).
+A: Six levels: hyperparameters (Optuna/CV), polynomial degree (AIC/BIC/CV), GP kernel
+(marginal likelihood), training loss (asymmetric cost-sensitive objective), the baseline
+race decision (Monte Carlo over a 4-point grid), and the final race decision (full-window
+Differential Evolution over 31–56 with a dual-engine objective).
+
+**Q: Why Differential Evolution? Why not Newton–Raphson or golden-section?**
+A: The objective is a black-box Monte Carlo win probability over an integer pit lap. It is
+not differentiable (Newton is out), not guaranteed unimodal (golden-section can be trapped
+by the GP engine's second local peak), and is noisy (DE is evaluated with common random
+numbers and validated on fresh seeds). DE is derivative-free, population-based, handles
+integer variables and bounds, and is robust to non-convexity. We still implemented Newton
+and golden-section as benchmarks: Newton from lap 42 lands on lap 55 with 29.6% ensemble
+win and roots ranging 5–148; golden-section finds lap 34 only when given the full bracket
+and returns the old grid's lap 42 when seeded with the old window. DE finds lap 34 and is
+stable across all three seeds.
+
+**Q: If you also plotted the full 31–56 landscape, isn't that just a 26-point grid?**
+A: The landscape is a post-hoc validation plot, not the optimizer. DE itself was run on a
+fresh cache and found the optimum in 19 unique evaluations without assuming unimodality or
+differentiability. For one dimension an exhaustive scan is cheap; DE's value is that the
+same algorithm extends to higher-dimensional strategy spaces (two stops, compound choice,
+rival response) where exhaustive search explodes.
 
 **Q: Why do the two simulation engines disagree so much?**
 A: They disagree about *confidence*, not direction. XGB forces one small noise σ on all
@@ -829,12 +1007,13 @@ uncertainty (GP σ) change the answer more than squeezing the third decimal of a
 ```
 F1 Dataset/
 ├── get_data.py                          # downloads Bahrain 2023 via FastF1 → Excel
+├── optimizer.py                         # full-window Differential Evolution optimizer + benchmarks
 ├── f1-tire-degradation-performance-decay-analysis.ipynb   # full pipeline (source of truth)
 ├── app.py                               # Streamlit pit-wall dashboard (read-only)
 ├── F1_Bahrain_2023_Dataset.xlsx         # raw exported lap table
 ├── cache/                               # FastF1 HTTP cache (raw sessions)
 ├── artifacts/                           # notebook exports consumed by app.py
-│   ├── config.json                      # constants, MC config, best params, GP kernel
+│   ├── config.json                      # constants, MC config, best params, GP kernel, OPTIMIZATION
 │   ├── linear_model.joblib, poly_model.joblib, poly_transformer.joblib
 │   ├── xgb_model.joblib, rf_model.joblib, gp_model.joblib, gp_scaler.joblib
 │   ├── laps_df.parquet                  # cleaned modeling dataset (564 laps)
@@ -844,7 +1023,14 @@ F1 Dataset/
 │   ├── win_tables.csv, win_probability_comparison.csv
 │   ├── lowess_curves.csv, temp_heatmap.csv, lap_conditions.parquet
 │   ├── per_stint_trace.csv              # PER stint 3: actual vs all 5 models
-│   └── real_pit_stops.csv               # real pit laps for validation
+│   ├── real_pit_stops.csv               # real pit laps for validation
+│   ├── optimization_landscape.csv       # win% and gap stats for laps 31–56
+│   ├── optimization_comparison.csv      # grid vs golden vs Newton vs DE
+│   ├── optimization_convergence.csv     # DE best objective per generation
+│   ├── optimization_de_seeds.csv        # DE stability across seeds
+│   ├── optimization_validation.csv      # independent-seed validation summary
+│   ├── optimization_validation_seeds.csv# per-seed validation rows
+│   └── optimization_newton_roots.csv    # Newton start-dependence evidence
 └── .streamlit/config.toml               # dark F1-style theme
 ```
 
@@ -853,13 +1039,21 @@ F1 Dataset/
 ```bash
 python get_data.py                        # fetch + cache raw data (or rely on cache/)
 jupyter nbconvert --to notebook --execute --inplace \
-    f1-tire-degradation-performance-decay-analysis.ipynb   # retrains + exports artifacts/
+    f1-tire-degradation-performance-decay-analysis.ipynb   # retrains + exports base artifacts/
+python optimizer.py                       # full-window DE optimization + validation artifacts
 streamlit run app.py                      # opens the dashboard
 ```
 
+The notebook's final cells call `optimizer.run_full_optimization(...)` as well, so a full
+notebook execution also produces the optimization artifacts. `python optimizer.py` is the
+standalone path when you do not want to rerun the 100-trial Optuna and model-training
+sections.
+
 Key run configuration (from `artifacts/config.json`): fuel K = 0.055 s/kg, race 57 laps,
-current lap 30, pit-loss 22 s, SC hazard 15% per 10-lap block, 10,000 sims/strategy,
-strategies at laps 42/45/48/51, rival 2.1 s ahead on 18-lap-old mediums.
+current lap 30, pit-loss 22 s, SC hazard 15% per 10-lap block, 10,000 sims/strategy for
+the baseline grid at laps 42/45/48/51, rival 2.1 s ahead on 18-lap-old mediums. The final
+optimizer uses 50,000 common-random-number races per candidate over laps 31–56, three DE
+seeds (42, 7, 2026), and five independent validation seeds × 20,000 races.
 
 ---
 
@@ -874,13 +1068,147 @@ strategies at laps 42/45/48/51, rival 2.1 s ahead on 18-lap-old mediums.
 > Process with Matérn 5/2 + WhiteKernel — predict degradation on a stint-grouped
 > leakage-safe split, evaluated not only by RMSE but by strategy-aware metrics
 > (tire-age-weighted RMSE and the Strategy Impact Score of optimistic errors). The
-> predictions drive a 10,000-run Monte Carlo race simulator over four pit strategies
-> including pit loss, a rival car, and safety-car risk; the optimal undercut is lap 42
-> (99.7% win under fixed-noise XGB, 57% under uncertainty-aware GP, both agreeing on
-> direction, differing on confidence). The result is validated lap-by-lap (0.58 s drift
-> over a 20-lap stint) against real pit-stop timing, and shipped as an interactive
-> Streamlit pit-wall dashboard. The novelty is the combination of physics-informed
-> target design, a cost-sensitive asymmetric training objective, native uncertainty
-> propagation from a Gaussian Process into the race simulation, and strategy-aware
-> evaluation — turning a regression exercise into an honest, probabilistic race
-> decision tool.
+> predictions drive a Monte Carlo race simulator including pit loss, a rival car, and
+> safety-car risk. The baseline four-point grid picks lap 42 (99.7% XGB win, 57% GP win),
+> but the final layer replaces that grid with a **full-window Differential Evolution**
+> optimizer over laps 31–56. The optimizer maximizes the average win probability across
+> both engines using common random numbers, and finds **lap 34** (99.99% XGB, 99.98% GP):
+> +22 percentage points of model-averaged win probability and +5.1 s / +18.7 s of median
+> margin, stable across three DE seeds and five independent validation seeds. Newton's
+> method and golden-section are implemented as benchmarks and fail or become
+> bracket-dependent, which is why DE is the defensible choice. The result is validated
+> lap-by-lap (0.58 s drift over a 20-lap stint) against real pit-stop timing, and shipped
+> as an interactive Streamlit pit-wall dashboard with a dedicated Optimizer tab. The
+> novelty is the combination of physics-informed target design, a cost-sensitive
+> asymmetric training objective, native uncertainty propagation from a Gaussian Process
+> into the race simulation, strategy-aware evaluation, and full-window stochastic
+> strategy optimization — turning a regression exercise into an honest, probabilistic
+> race decision tool.
+
+---
+
+## 20. What Was Added in the Final Version — Full-Window Pit-Lap Optimizer
+
+This section is the short "what changed" companion to the detailed methodology in
+Section 8.6. It is written for the final review/viva: what the new component is, why it
+is a real optimization algorithm, what it found, and why the result is better.
+
+### 20.1 The gap it closes
+
+The original project ended with a **four-point strategy grid**:
+
+```text
+p ∈ {42, 45, 48, 51}
+```
+
+That is a hand-designed sample, not an optimizer. It evaluates only **4 of the 26
+feasible pit laps** (31–56), so it cannot see the true optimum. The final version adds a
+genuine full-window optimization layer instead of extrapolating from four points.
+
+### 20.2 The new component
+
+`optimizer.py` implements the final strategy layer:
+
+```text
+maximize    J(p) = 1/2 [ P_XGB(win | p) + P_GP(win | p) ]
+                   + 1e-6 * mean_median_gap(p)
+subject to  p ∈ {31, 32, ..., 56}      (integer pit lap, current lap 30)
+            one-stop strategy, rival pits lap 45, 22 s pit loss, 15% SC hazard
+```
+
+The tiny second term only breaks ties inside the win-probability plateau. The main
+objective is deliberately **model-robust**: it averages the fixed-noise XGBoost engine and
+the uncertainty-aware GP engine instead of optimizing to one model's confidence
+assumptions.
+
+Every candidate is evaluated with **common random numbers (CRN)** — the same safety-car
+and lap-noise draws — so the comparison reflects the pit lap, not a lucky seed. Final
+validation uses five fresh, independent seeds.
+
+### 20.3 Why Differential Evolution
+
+The chosen algorithm is **Differential Evolution** from
+`scipy.optimize.differential_evolution`, with `integrality=True` over `[31, 56]`, three
+seeds (42, 7, 2026), and a callback for convergence.
+
+The objective is a black-box, integer, non-smooth, noisy Monte Carlo estimate, and under
+the GP engine the landscape has a second local maximum near lap 54. That rules out the
+simpler alternatives:
+
+| Method | What it requires | What happened here | Verdict |
+|---|---|---|---|
+| Newton–Raphson | Differentiable objective, local derivative | Started from the old grid's lap 42, it landed on **lap 55** with **29.56%** ensemble win; roots across starts ranged from **5 to 148** | Rejected |
+| Golden-section | Continuous, unimodal objective | Found lap 34 only when given the full bracket; seeded with the old grid window it returned **lap 42** | Not robust |
+| **Differential Evolution** | Only bounds + a scalar objective | Found **lap 34** in **19 unique evaluations**, **3 generations**, ~**1.2 s**; all three seeds returned lap 34 | **Selected** |
+
+The benchmark table in the dashboard reads directly from
+`artifacts/optimization_comparison.csv`; the Newton root evidence is in
+`artifacts/optimization_newton_roots.csv`.
+
+### 20.4 Results — before vs after
+
+| Metric | Old grid best (lap 42) | DE optimum (lap 34) | Change |
+|---|---|---|---|
+| XGBoost win probability | 99.64% | **99.99%** | +0.35 pp |
+| Gaussian Process win probability | 56.35% | **99.98%** | +43.63 pp |
+| Dual-engine win probability | 78.00% | **99.99%** | **+21.99 pp** |
+| XGBoost median final gap | +12.91 s | **+17.97 s** | **+5.06 s** |
+| GP median final gap | +1.06 s | **+19.71 s** | **+18.66 s** |
+
+**Independent validation** (five fresh seeds × 20,000 races per scenario):
+
+| Scenario | Pit lap | XGB win | GP win | Dual-engine win | XGB median gap | GP median gap |
+|---|---|---|---|---|---|---|
+| Old grid best | 42 | 99.59% | 56.50% | 78.05% | +12.94 s | +1.07 s |
+| **DE optimum** | **34** | **99.99%** | **99.97%** | **99.98%** | **+18.00 s** | **+19.73 s** |
+
+The gain is not a boundary artifact: lap 34 is interior to 31–56. It is not a
+single-engine artifact: XGB-only prefers lap 36, GP-only prefers lap 33, and the
+dual-engine objective prefers lap 34 — all in the same early-stop neighborhood. It is not
+Monte Carlo noise: the gain survives the independent seeds.
+
+### 20.5 Why this is better
+
+1. **It replaces hand-design with search.** The old grid was a human choice of four laps;
+   DE searches every feasible integer lap and finds an interior optimum.
+2. **It optimizes the actual dual-engine decision.** The objective is the average win
+   probability across both simulation engines, which matches the project's central
+   uncertainty story.
+3. **It is validated, not just optimized.** The old grid's best point is dominated on both
+   engines in the optimization run and in five independent validation runs.
+4. **It is benchmarked against the alternatives.** Newton and golden-section are not just
+   dismissed theoretically; they are implemented and their failure modes are recorded.
+5. **It is cheap enough to re-run.** 19 unique evaluations, 3 generations, ~1.2 s with
+   50,000 races per candidate. A pit wall can re-run this as the race evolves.
+6. **It extends naturally.** A one-dimensional exhaustive scan is also cheap; DE's value
+   is that the same algorithm handles higher-dimensional decisions (two stops, compound
+   choice, rival response) where exhaustive search explodes.
+
+### 20.6 What changed in the repository
+
+- `optimizer.py` — the Differential Evolution optimizer, Newton/golden benchmarks,
+  common-random-number simulator, independent validation, artifact export, and CLI.
+- `f1-tire-degradation-performance-decay-analysis.ipynb` — new final section with the
+  algorithm explanation, benchmark table, convergence plot, landscape plot, and
+  independent validation.
+- `app.py` — new **Optimizer** tab with the algorithm rationale, benchmark, convergence,
+  landscape proof, validation table, and Newton evidence; the sidebar/overview now
+  recommend the optimized lap, and the what-if simulator default/ranges were aligned.
+- `README.md` — Section 8.6 documents the full methodology; this Section 20 is the
+  before/after summary for the final review.
+- `artifacts/optimization_*.csv` and `artifacts/config.json` — generated proof artifacts:
+  landscape, comparison, convergence, DE seeds, independent validation, Newton roots, and
+  the `OPTIMIZATION` config block.
+
+The old four-point grid is intentionally retained in the Monte Carlo tab and README
+Section 9 as the **baseline**; the new optimizer is the final decision layer.
+
+### 20.7 Reproduce
+
+```bash
+python optimizer.py          # regenerate optimization artifacts + update config.json
+streamlit run app.py         # open the dashboard → Optimizer tab
+```
+
+The notebook's final cells call the same function, so a full notebook execution also
+produces these artifacts.

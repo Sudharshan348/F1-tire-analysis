@@ -60,5 +60,58 @@
     "OUR_COMPOUND_BEFORE": 1,
     "OUR_COMPOUND_AFTER": 2,
     "OUR_TYRE_AGE_START": 15
+  },
+  "OPTIMIZATION": {
+    "algorithm": "Differential Evolution",
+    "objective": "Mean win probability across the XGBoost and Gaussian Process engines, tie-broken by the mean median final gap",
+    "pit_lap_bounds": [
+      31,
+      56
+    ],
+    "best_pit_lap": 34,
+    "best_offset": 4,
+    "xgb_win_pct": 0.99992,
+    "gp_win_pct": 0.99984,
+    "ensemble_win_pct": 0.99988,
+    "xgb_median_gap": 17.967474424345824,
+    "gp_median_gap": 19.714711483681725,
+    "xgb_p10_gap": 11.760243204122261,
+    "xgb_p90_gap": 24.17823958593936,
+    "gp_p10_gap": 12.433797610107105,
+    "gp_p90_gap": 27.050229517769626,
+    "grid_best_pit_lap": 42,
+    "grid_best_xgb_win_pct": 0.9964,
+    "grid_best_gp_win_pct": 0.56352,
+    "grid_best_ensemble_win_pct": 0.77996,
+    "grid_best_xgb_median_gap": 12.908537351591917,
+    "grid_best_gp_median_gap": 1.0558152735766981,
+    "improvement_pp": 21.992,
+    "xgb_median_gap_gain": 5.058937072753906,
+    "gp_median_gap_gain": 18.658896210105027,
+    "xgb_only_pit_lap": 36,
+    "gp_only_pit_lap": 33,
+    "ensemble_landscape_pit_lap": 34,
+    "n_simulations": 50000,
+    "validation_simulations": 20000,
+    "validation_seeds": [
+      101,
+      202,
+      303,
+      404,
+      505
+    ],
+    "n_evaluations": 19,
+    "n_function_evals": 48,
+    "n_iterations": 3,
+    "runtime_s": 1.2217793840000013,
+    "seed": 42,
+    "de_seeds": [
+      42,
+      7,
+      2026
+    ],
+    "popsize": 12,
+    "maxiter": 30,
+    "common_random_numbers": true
   }
 }
