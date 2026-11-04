@@ -1,0 +1,6 @@
+Algorithm,SearchRange,BestPitLap,XGB_WinPct,GP_WinPct,Ensemble_WinPct,XGB_MedianGap,GP_MedianGap,Evaluations,Runtime_s,HandlesInteger,NeedsDerivative,Global,Verdict
+Grid search (baseline),42-51 (4 points),42,0.99852,0.56352,0.78102,14.396938787942716,1.055815286552992,4,0.08279940000011266,Yes,No,No,Baseline only: 4-point sample misses the full-window peak.
+Golden-section (full window),31-56,33,0.99994,0.99992,0.99993,19.08366058970053,20.344375733671626,10,0.19736439999996946,No (continuous relaxation),No,No (unimodal assumption),"Finds the peak here, but cannot certify it; bracket-sensitive."
+Golden-section (old grid bracket),42-51,42,0.99852,0.56352,0.78102,14.396938787942716,1.055815286552992,7,0.13659920000009151,No (continuous relaxation),No,No (unimodal assumption),Trapped at the old bracket edge: exactly the grid bias.
+Newton-Raphson (local quadratic surrogate),local surrogate around start,54,0.001,0.59282,0.29691,-15.068194879049472,1.8714277543496394,31,0.12821329999951558,No,Yes,No (local),From the old-grid start (lap 42) it lands on lap 54; roots ranged 23.8 to 486.6; rejected.
+Differential Evolution (selected),31-56,33,0.99994,0.99992,0.99993,19.08366058970053,20.344375733671626,17,0.3464622999999847,Yes,No,Yes (population-based),"Selected: global, integer-native, assumption-light."

@@ -1,0 +1,86 @@
+[
+ {
+  "Compound": "Soft",
+  "TyreAge": 1,
+  "XGB": 0.477,
+  "GP": 0.195,
+  "GPstd": 0.672
+ },
+ {
+  "Compound": "Soft",
+  "TyreAge": 5,
+  "XGB": 0.612,
+  "GP": 0.103,
+  "GPstd": 0.563
+ },
+ {
+  "Compound": "Soft",
+  "TyreAge": 10,
+  "XGB": 1.294,
+  "GP": 1.626,
+  "GPstd": 0.513
+ },
+ {
+  "Compound": "Soft",
+  "TyreAge": 15,
+  "XGB": 1.782,
+  "GP": 3.07,
+  "GPstd": 0.743
+ },
+ {
+  "Compound": "Soft",
+  "TyreAge": 20,
+  "XGB": 1.998,
+  "GP": 3.286,
+  "GPstd": 0.976
+ },
+ {
+  "Compound": "Soft",
+  "TyreAge": 25,
+  "XGB": 3.203,
+  "GP": 2.515,
+  "GPstd": 1.216
+ },
+ {
+  "Compound": "Hard",
+  "TyreAge": 1,
+  "XGB": 0.486,
+  "GP": 0.776,
+  "GPstd": 0.575
+ },
+ {
+  "Compound": "Hard",
+  "TyreAge": 5,
+  "XGB": 0.623,
+  "GP": 0.388,
+  "GPstd": 0.456
+ },
+ {
+  "Compound": "Hard",
+  "TyreAge": 10,
+  "XGB": 1.279,
+  "GP": 1.015,
+  "GPstd": 0.465
+ },
+ {
+  "Compound": "Hard",
+  "TyreAge": 15,
+  "XGB": 1.791,
+  "GP": 2.894,
+  "GPstd": 0.593
+ },
+ {
+  "Compound": "Hard",
+  "TyreAge": 20,
+  "XGB": 2.021,
+  "GP": 3.364,
+  "GPstd": 0.967
+ },
+ {
+  "Compound": "Hard",
+  "TyreAge": 25,
+  "XGB": 3.226,
+  "GP": 2.583,
+  "GPstd": 1.23
+ }
+]

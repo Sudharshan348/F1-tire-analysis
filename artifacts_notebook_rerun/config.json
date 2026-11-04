@@ -1,0 +1,117 @@
+{
+  "FUEL_EFFECT_K": 0.055,
+  "FUEL_PER_LAP": 1.9298245614035088,
+  "RACE_LAPS": 57,
+  "DELTA_PER_LAP": 0.10614035087719298,
+  "residual_std": 0.6700341540351382,
+  "MEAN_TRACK_TEMP": 29.65904255319149,
+  "MEAN_AIR_TEMP": 26.63882978723404,
+  "best_xgb_params": {
+    "n_estimators": 108,
+    "max_depth": 3,
+    "learning_rate": 0.022059633236679473,
+    "subsample": 0.596177822028048,
+    "colsample_bytree": 0.5603142489952866,
+    "reg_alpha": 0.0002584036771662681,
+    "reg_lambda": 0.00280433178991367
+  },
+  "best_rf_params": {
+    "n_estimators": 388,
+    "max_depth": 5,
+    "min_samples_leaf": 4,
+    "min_samples_split": 7,
+    "max_features": 0.3835120594624565
+  },
+  "gp_kernel": "1.24**2 * Matern(length_scale=[1.09, 1.44, 1e+03, 3.71, 1e+03, 1e+03, 0.42], nu=2.5) + WhiteKernel(noise_level=0.171)",
+  "features": [
+    "TyreLife",
+    "TyreAgeSq",
+    "TyreAgeCubed",
+    "CompoundEncoded",
+    "TrackTemp",
+    "AirTemp",
+    "LapNumber"
+  ],
+  "optimal_degree": 2,
+  "n_train": 452,
+  "n_test": 112,
+  "n_laps_modeled": 564,
+  "n_drivers": 19,
+  "n_stints": 52,
+  "compound_counts": {
+    "HARD": 361,
+    "SOFT": 195,
+    "MEDIUM": 8
+  },
+  "MC": {
+    "CURRENT_LAP": 30,
+    "RACE_TOTAL_LAPS": 57,
+    "PIT_STOP_DELTA": 22.0,
+    "SAFETY_CAR_PROBABILITY": 0.15,
+    "N_SIMULATIONS": 10000,
+    "PIT_STRATEGIES": [
+      12,
+      15,
+      18,
+      21
+    ],
+    "RIVAL_GAP_SECONDS": 2.1,
+    "RIVAL_TYRE_AGE": 18,
+    "OUR_COMPOUND_BEFORE": 1,
+    "OUR_COMPOUND_AFTER": 2,
+    "OUR_TYRE_AGE_START": 15
+  },
+  "OPTIMIZATION": {
+    "algorithm": "Differential Evolution",
+    "objective": "Mean win probability across the XGBoost and Gaussian Process engines, tie-broken by the mean median final gap",
+    "pit_lap_bounds": [
+      31,
+      56
+    ],
+    "best_pit_lap": 33,
+    "best_offset": 3,
+    "xgb_win_pct": 0.99994,
+    "gp_win_pct": 0.99992,
+    "ensemble_win_pct": 0.99993,
+    "xgb_median_gap": 19.08366058970053,
+    "gp_median_gap": 20.344375733671626,
+    "xgb_p10_gap": 12.802381194825031,
+    "xgb_p90_gap": 25.3685160835358,
+    "gp_p10_gap": 13.083970635294456,
+    "gp_p90_gap": 27.6699066996317,
+    "grid_best_pit_lap": 42,
+    "grid_best_xgb_win_pct": 0.99852,
+    "grid_best_gp_win_pct": 0.56352,
+    "grid_best_ensemble_win_pct": 0.78102,
+    "grid_best_xgb_median_gap": 14.396938787942716,
+    "grid_best_gp_median_gap": 1.055815286552992,
+    "improvement_pp": 21.890999999999995,
+    "xgb_median_gap_gain": 4.6867218017578125,
+    "gp_median_gap_gain": 19.288560447118634,
+    "xgb_only_pit_lap": 36,
+    "gp_only_pit_lap": 33,
+    "ensemble_landscape_pit_lap": 33,
+    "n_simulations": 50000,
+    "validation_simulations": 20000,
+    "validation_seeds": [
+      101,
+      202,
+      303,
+      404,
+      505
+    ],
+    "n_evaluations": 17,
+    "n_function_evals": 48,
+    "n_iterations": 3,
+    "runtime_s": 0.3464622999999847,
+    "seed": 42,
+    "de_seeds": [
+      42,
+      7,
+      2026
+    ],
+    "popsize": 12,
+    "maxiter": 30,
+    "common_random_numbers": true
+  }
+}
